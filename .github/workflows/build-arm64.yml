@@ -1,0 +1,90 @@
+name: Build arm64-only Vector-SR hotfix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this patch repository
+        uses: actions/checkout@v6
+        with:
+          path: patch-repo
+
+      - name: Checkout pinned Vector-SR
+        uses: actions/checkout@v6
+        with:
+          repository: byemaxx/Vector-SR
+          ref: a8f500ddb1c8f53efec6fd02b6520c321db34627
+          submodules: recursive
+          fetch-depth: 0
+          path: vector
+
+      - name: Checkout LSPlant build submodules
+        run: git -C vector/external/lsplant submodule update --init --recursive lsplant/src/main/jni/external/dex_builder
+
+      - name: Apply hotfix and arm64 build filter
+        working-directory: vector
+        run: |
+          python3 ../patch-repo/scripts/apply_samsung_hotfix.py
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('build.gradle.kts')
+          text = root.read_text()
+          old = 'ndk { abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")) }'
+          new = 'ndk { abiFilters.add("arm64-v8a") }'
+          if old not in text:
+              raise SystemExit('ABI filter anchor not found')
+          root.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Configure Gradle
+        run: |
+          echo 'android.native.buildOutput=verbose' >> ~/.gradle/gradle.properties
+          echo 'org.gradle.parallel=true' >> ~/.gradle/gradle.properties
+          echo 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -XX:+UseParallelGC' >> ~/.gradle/gradle.properties
+
+      - name: Setup ninja
+        uses: seanmiddleditch/gha-setup-ninja@v6
+        with:
+          version: 1.12.1
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Remove Android SDK bundled CMake
+        run: rm -rf "$ANDROID_HOME/cmake"
+
+      - name: Build arm64 release
+        working-directory: vector
+        run: ./gradlew :zygisk:zipRelease
+
+      - name: Prepare installable ZIP
+        run: |
+          mkdir -p out
+          src=$(ls vector/zygisk/release/Vector-SR-v*-Release.zip | head -1)
+          cp "$src" out/Vector-SR-S24U-Arm64-SharedUID-Hotfix-Release.zip
+          sha256sum out/Vector-SR-S24U-Arm64-SharedUID-Hotfix-Release.zip | tee out/SHA256SUMS.txt
+
+      - name: Upload patched module
+        uses: actions/upload-artifact@v6
+        with:
+          name: Vector-SR-S24U-Arm64-SharedUID-Hotfix
+          path: |
+            out/Vector-SR-S24U-Arm64-SharedUID-Hotfix-Release.zip
+            out/SHA256SUMS.txt
+          if-no-files-found: error

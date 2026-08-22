@@ -1,0 +1,186 @@
+name: Build device-tested Vector-SR hotfix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-device-tested.yml'
+      - 'scripts/apply_samsung_hotfix.py'
+      - 'release-trigger.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout this compatibility repository
+        uses: actions/checkout@v6
+        with:
+          path: patch-repo
+
+      - name: Checkout pinned Vector-SR
+        uses: actions/checkout@v6
+        with:
+          repository: byemaxx/Vector-SR
+          ref: a8f500ddb1c8f53efec6fd02b6520c321db34627
+          submodules: recursive
+          fetch-depth: 0
+          path: vector
+
+      - name: Checkout LSPlant build submodules
+        run: git -C vector/external/lsplant submodule update --init --recursive lsplant/src/main/jni/external/dex_builder
+
+      - name: Apply Samsung android.uid.system guard
+        working-directory: vector
+        run: |
+          python3 ../patch-repo/scripts/apply_samsung_hotfix.py
+          git diff --check
+          git diff -- legacy/src/main/java/org/matrix/vector/legacy/LegacyDelegateImpl.java legacy/src/main/java/de/robv/android/xposed/XposedBridge.java
+
+      - name: Synchronize GPL-3.0 license from pinned upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp vector/LICENSE patch-repo/LICENSE
+          git -C patch-repo config user.name 'github-actions[bot]'
+          git -C patch-repo config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C patch-repo add LICENSE
+          if ! git -C patch-repo diff --cached --quiet; then
+            git -C patch-repo commit -m 'legal: sync GPL-3.0 license from pinned Vector-SR'
+            git -C patch-repo push origin HEAD:main
+          fi
+          echo "PUBLIC_REPO_SHA=$(git -C patch-repo rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Package corresponding source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          SOURCE_DIR="$RUNNER_TEMP/vector-sr-s24u-source"
+          rm -rf "$SOURCE_DIR"
+          mkdir -p "$SOURCE_DIR"
+
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.gradle' \
+            --exclude='build' \
+            --exclude='.cxx' \
+            vector/ "$SOURCE_DIR/"
+
+          (
+            cd "$SOURCE_DIR"
+            zip -qr "$GITHUB_WORKSPACE/out/Vector-SR-v1.2-3136-S24U-Hotfix-source.zip" .
+          )
+
+          git -C vector diff --binary > out/Vector-SR-v1.2-3136-S24U-Hotfix.patch
+          cat > out/SOURCE-METADATA.txt <<EOF
+          Project: unofficial Vector-SR Samsung S24 Ultra Shared-UID hotfix
+          Modified: 2026-08-22
+          Vector-SR upstream: byemaxx/Vector-SR
+          Upstream commit: a8f500ddb1c8f53efec6fd02b6520c321db34627
+          Compatibility repository commit: ${PUBLIC_REPO_SHA}
+          License: GNU General Public License v3.0 (GPL-3.0)
+          The source ZIP contains the patched upstream working tree and checked-out submodule contents used for this build.
+          EOF
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Configure Gradle
+        run: |
+          echo 'android.native.buildOutput=verbose' >> ~/.gradle/gradle.properties
+          echo 'org.gradle.parallel=true' >> ~/.gradle/gradle.properties
+          echo 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -XX:+UseParallelGC' >> ~/.gradle/gradle.properties
+
+      - name: Setup ninja
+        uses: seanmiddleditch/gha-setup-ninja@v6
+        with:
+          version: 1.12.1
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Remove Android SDK bundled CMake
+        run: rm -rf "$ANDROID_HOME/cmake"
+
+      - name: Build Vector-SR
+        working-directory: vector
+        run: ./gradlew zipAll
+
+      - name: Prepare installable ZIP and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=$(ls vector/zygisk/release/Vector-SR-v*-Release.zip | head -1)
+          cp "$src" out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip
+          (
+            cd out
+            rm -f SHA256SUMS.txt
+            for file in *; do
+              [ "$file" = 'SHA256SUMS.txt' ] && continue
+              sha256sum "$file"
+            done | sort > SHA256SUMS.txt
+          )
+          unzip -p out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip module.prop 2>/dev/null || true
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: Vector-SR-S24U-Device-Tested-SharedUID-Hotfix
+          path: out/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='v1.2-3136-s24u-hotfix'
+          TITLE='Vector-SR v1.2 (3136) — S24 Ultra SharedUID Hotfix'
+          NOTES=$(cat <<'EOF'
+          Unofficial device-specific Vector-SR build for the Samsung Galaxy S24 Ultra baseline documented in this repository.
+
+          This release is not affiliated with or endorsed by byemaxx/Vector-SR, JingMatrix/Vector, Samsung, or their upstream developers.
+
+          Fix:
+          - targeted legacy-hook guard for Samsung's `getApplicationInfoAsUser("android.uid.system", ...)` probe that previously caused a VectorLegacyBridge log/exception storm after soft restart;
+          - narrow logging safety net for the exact matching NameNotFoundException.
+
+          Licensing and source:
+          - Vector-SR upstream is GPL-3.0 and this modified distribution remains GPL-3.0;
+          - the complete corresponding patched source used for the build is attached as a source ZIP, including checked-out submodule contents;
+          - the exact source diff and SOURCE-METADATA.txt are attached;
+          - SHA256SUMS.txt covers all release assets.
+
+          Device validation details and the original device-tested artifact fingerprint remain documented in the repository. Please report modification-specific issues here rather than upstream unless reproduced on an unmodified build.
+          EOF
+          )
+
+          # Point the public release tag at the repository commit that includes the synchronized license.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+              -f sha="$PUBLIC_REPO_SHA" -F force=true >/dev/null
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --target "$PUBLIC_REPO_SHA" --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" out/* \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --target "$PUBLIC_REPO_SHA" \
+              --repo "$GITHUB_REPOSITORY"
+          fi
