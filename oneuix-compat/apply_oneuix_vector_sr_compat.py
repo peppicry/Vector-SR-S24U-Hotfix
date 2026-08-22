@@ -38,13 +38,10 @@ new = '''    fun supportRealTimeNetworkSpeed(loadPackageParam: LoadPackageParam)
             return
         }
 
-        // Samsung uses two CSC gates for the native real-time network-speed feature on
-        // recent One UI builds. SystemUI can keep the indicator alive while Settings
-        // hides its on/off preference if only the Common gate is overridden.
-        //
-        // Hook every getBoolean overload because Settings/SystemUI may call different
-        // SemCscFeature signatures across One UI revisions. This also avoids depending
-        // on a single legacy method signature when running through Vector-SR's legacy bridge.
+        // Recent Samsung builds can cache network-speed support in Settings during
+        // StatusBarNetworkSpeedController class initialization. Keep the CSC hooks for
+        // SystemUI/Settings, but also force the controller availability directly in
+        // Settings so a cached false value cannot hide the preference.
         val networkSpeedFeatureKeys = setOf(
             "CscFeature_Common_SupportZProjectFunctionInGlobal",
             "CscFeature_Setting_SupportRealTimeNetworkSpeed",
@@ -73,6 +70,27 @@ new = '''    fun supportRealTimeNetworkSpeed(loadPackageParam: LoadPackageParam)
         } catch (t: Throwable) {
             XposedBridge.log(t)
         }
+
+        if (loadPackageParam.packageName == Package.SETTINGS) {
+            try {
+                findAndHookMethod(
+                    "com.samsung.android.settings.notification.StatusBarNetworkSpeedController",
+                    loadPackageParam.classLoader,
+                    "getAvailabilityStatus",
+                    object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            // BasePreferenceController: 0 = AVAILABLE, 3 = UNSUPPORTED_ON_DEVICE.
+                            param.result = 0
+                        }
+                    }
+                )
+                XposedBridge.log(
+                    "[OneUIX-VectorSR] StatusBarNetworkSpeedController availability forced to AVAILABLE"
+                )
+            } catch (t: Throwable) {
+                XposedBridge.log(t)
+            }
+        }
     }
 '''
 
@@ -82,9 +100,9 @@ NETWORK.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 build = BUILD.read_text(encoding="utf-8")
 old_version = 'versionName = "1.7.0"'
-new_version = 'versionName = "1.7.0-vectorsr-s24u-compat1"'
+new_version = 'versionName = "1.7.0-vectorsr-s24u-compat2"'
 if old_version not in build:
     raise SystemExit("One UI X versionName anchor not found; upstream changed")
 BUILD.write_text(build.replace(old_version, new_version, 1), encoding="utf-8")
 
-print("Applied One UI X Vector-SR/S24U network-speed compatibility patch")
+print("Applied One UI X Vector-SR/S24U network-speed compatibility patch v2")
