@@ -9,7 +9,7 @@ text = NETWORK.read_text(encoding="utf-8")
 # Add imports used by the One UI 8.5 fallback preference injection.
 text = text.replace(
     "import android.graphics.Typeface\n",
-    "import android.content.Context\nimport android.graphics.Typeface\nimport android.os.Bundle\nimport android.provider.Settings\nimport java.lang.reflect.Proxy\n",
+    "import android.content.Context\nimport android.graphics.Typeface\nimport android.os.Bundle\nimport android.provider.Settings as AndroidSettings\nimport java.lang.reflect.Proxy\n",
     1,
 )
 
@@ -151,7 +151,7 @@ new = '''    fun supportRealTimeNetworkSpeed(loadPackageParam: LoadPackageParam)
                                 }
                                 callMethod(preference, "setTitle", title)
 
-                                val enabled = Settings.System.getInt(
+                                val enabled = AndroidSettings.System.getInt(
                                     context.contentResolver,
                                     "network_speed",
                                     0,
@@ -170,7 +170,7 @@ new = '''    fun supportRealTimeNetworkSpeed(loadPackageParam: LoadPackageParam)
                                         "onPreferenceChange" -> {
                                             val newValue = args?.getOrNull(1) as? Boolean
                                                 ?: return@newProxyInstance false
-                                            Settings.System.putInt(
+                                            AndroidSettings.System.putInt(
                                                 context.contentResolver,
                                                 "network_speed",
                                                 if (newValue) 1 else 0,
