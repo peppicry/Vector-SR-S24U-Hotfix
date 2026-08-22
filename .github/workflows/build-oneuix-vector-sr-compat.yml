@@ -1,0 +1,77 @@
+name: Build One UI X Vector-SR compat
+
+on:
+  push:
+    branches:
+      - oneuix-vector-sr-compat
+    paths:
+      - 'oneuix-compat/**'
+      - '.github/workflows/build-oneuix-vector-sr-compat.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout compatibility harness
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform 37
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
+
+      - name: Fetch pinned One UI X upstream
+        shell: bash
+        run: |
+          git clone https://github.com/SoClear/OneUIX.git oneuix
+          cd oneuix
+          git checkout 78e2ef1d10320aab293631f97ec636cf64d4cbea
+          test "$(git rev-parse HEAD)" = "78e2ef1d10320aab293631f97ec636cf64d4cbea"
+
+      - name: Apply Vector-SR / S24U compatibility patch
+        shell: bash
+        run: |
+          cd oneuix
+          python3 "$GITHUB_WORKSPACE/oneuix-compat/apply_oneuix_vector_sr_compat.py"
+          git diff --check
+          grep -q 'CscFeature_Common_SupportZProjectFunctionInGlobal' app/src/main/java/io/github/soclear/oneuix/hook/Network.kt
+          grep -q 'CscFeature_Setting_SupportRealTimeNetworkSpeed' app/src/main/java/io/github/soclear/oneuix/hook/Network.kt
+          grep -q 'hookAllMethods' app/src/main/java/io/github/soclear/oneuix/hook/Network.kt
+          git diff -- app/src/main/java/io/github/soclear/oneuix/hook/Network.kt app/build.gradle.kts
+
+      - name: Build unsigned release APK
+        shell: bash
+        run: |
+          cd oneuix
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Collect APK and checksum
+        shell: bash
+        run: |
+          mkdir -p out
+          APK=$(find oneuix/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -1)
+          test -n "$APK"
+          cp "$APK" out/OneUIX-1.7.0-VectorSR-S24U-compat1-unsigned.apk
+          sha256sum out/OneUIX-1.7.0-VectorSR-S24U-compat1-unsigned.apk | tee out/SHA256SUMS.txt
+
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneUIX-VectorSR-S24U-compat1-unsigned
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
