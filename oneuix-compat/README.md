@@ -1,6 +1,6 @@
 # One UI X — Vector-SR S24 Ultra compatibility build
 
-This branch does **not** modify the installed Vector-SR hotfix and does not change the `main` branch baseline.
+This branch does **not** modify the installed Vector-SR hotfix and does not change the `main` branch baseline. It is a test-only compatibility build until the Samsung Settings toggle is validated on-device.
 
 It builds a minimally patched copy of upstream One UI X 1.7.0, pinned to:
 
