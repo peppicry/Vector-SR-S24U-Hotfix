@@ -7,6 +7,12 @@ on:
     paths:
       - 'oneuix-compat/**'
       - '.github/workflows/build-oneuix-vector-sr-compat.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'oneuix-compat/**'
+      - '.github/workflows/build-oneuix-vector-sr-compat.yml'
   workflow_dispatch:
 
 jobs:
