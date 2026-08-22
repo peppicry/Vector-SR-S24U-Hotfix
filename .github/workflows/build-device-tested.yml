@@ -9,7 +9,7 @@ on:
       - 'scripts/apply_samsung_hotfix.py'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -77,7 +77,7 @@ jobs:
           sha256sum out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip | tee out/SHA256SUMS.txt
           unzip -p out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip module.prop 2>/dev/null || true
 
-      - name: Upload patched module
+      - name: Upload CI artifact
         uses: actions/upload-artifact@v6
         with:
           name: Vector-SR-S24U-Device-Tested-SharedUID-Hotfix
@@ -85,3 +85,32 @@ jobs:
             out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip
             out/SHA256SUMS.txt
           if-no-files-found: error
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.2-3136-s24u-hotfix"
+          TITLE="Vector-SR v1.2 (3136) — S24 Ultra SharedUID Hotfix"
+          NOTES=$(cat <<'EOF'
+          Device-specific Vector-SR build for the Samsung Galaxy S24 Ultra baseline documented in this private repository.
+
+          Fix: targeted legacy-hook guard for Samsung's `getApplicationInfoAsUser("android.uid.system", ...)` probe that previously caused a VectorLegacyBridge log/exception storm after soft restart.
+
+          The release contains the installable KernelSU/Vector-SR ZIP and `SHA256SUMS.txt`. The source patch and reproducible build workflow remain in the repository.
+          EOF
+          )
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip \
+              out/SHA256SUMS.txt \
+              --clobber
+          else
+            gh release create "$TAG" \
+              out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip \
+              out/SHA256SUMS.txt \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --target "${GITHUB_SHA}"
+          fi
