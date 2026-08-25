@@ -38,17 +38,21 @@ After installing the all-ABI build on the tested S24 Ultra:
 
 Known unrelated One UI X errors (`NetspeedViewController$NetworkSpeedManager$1` and `QSClockQuickStarHelper` missing on this One UI build) are startup/module-compatibility issues and are not part of this Vector bug.
 
-## Required SystemUI reinjection after soft restart
+## Required SystemUI-only restart after soft restart
 
-On the tested `SM-S928B` / One UI 8.5 setup, a KernelSU soft restart can leave the Vector-SR framework alive while `com.android.systemui` has not yet picked up the expected Vector/One UI X hooks. After the soft restart, restart Samsung SystemUI once:
+On the tested `SM-S928B` / One UI 8.5 setup, **Vector-SR itself and the One UI X app can both open normally after a KernelSU soft restart**. The observed issue is narrower: One UI X functions that depend on hooks inside `com.android.systemui` can remain inactive even though the Vector framework/manager is otherwise available.
+
+To activate those SystemUI-scoped functions, restart **only Samsung SystemUI** once:
 
 ```sh
 su -c 'kill $(pidof com.android.systemui)'
 ```
 
-Android respawns `com.android.systemui` automatically. The status bar / Quick Settings can disappear briefly while SystemUI restarts; after it returns, the tested setup loads the Vector-SR SystemUI injection and One UI X hooks normally.
+Android respawns `com.android.systemui` automatically. The status bar / Quick Settings can disappear briefly while the process restarts. Once it returns, the tested setup activates the expected Vector-SR / One UI X functions in SystemUI.
 
-This is a **post-soft-restart SystemUI reinjection workaround** for the tested setup. It is **not a thermal fix** and must not be conflated with the separate heating / `VectorLegacyBridge` log-storm issue addressed by this hotfix. One execution after the soft restart is sufficient; do not loop or repeatedly kill SystemUI when the hooks are already working.
+This behavior must **not** be described as Vector-SR failing to open, One UI X failing to open, or the whole framework being dead. It is a **SystemUI-process hook activation/reinjection workaround**. It is also **not a thermal fix** and must not be conflated with the separate heating / `VectorLegacyBridge` log-storm issue addressed by this hotfix.
+
+One execution after the soft restart is sufficient. There is no need to reinstall Vector-SR, restart One UI X, repeat the full soft restart, or repeatedly kill SystemUI when the functions are already active.
 
 ## Source, license, and reproducibility
 
