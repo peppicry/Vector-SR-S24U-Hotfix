@@ -1,12 +1,18 @@
-name: Build device-tested Vector-SR hotfix
+name: Build candidate Vector-SR S24U hotfix
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_prerelease:
+        description: Publish this candidate as a separate GitHub prerelease
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
       - '.github/workflows/build-device-tested.yml'
       - 'scripts/apply_samsung_hotfix.py'
+      - 'docs/BUILDING.md'
       - 'release-trigger.txt'
 
 permissions:
@@ -26,13 +32,29 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: byemaxx/Vector-SR
-          ref: a8f500ddb1c8f53efec6fd02b6520c321db34627
+          ref: ccf240320c838ee097b7bd4d996f314d25643cb0
           submodules: recursive
           fetch-depth: 0
           path: vector
 
       - name: Checkout LSPlant build submodules
         run: git -C vector/external/lsplant submodule update --init --recursive lsplant/src/main/jni/external/dex_builder
+
+      - name: Verify pinned build identity
+        working-directory: vector
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'ccf240320c838ee097b7bd4d996f314d25643cb0'
+          test "$(git rev-list --count HEAD)" = '3151'
+          test "$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)" = 'v1.2'
+          # Upstream Gradle reads origin/master for versionCode; freeze it to this checkout.
+          git update-ref refs/remotes/origin/master "$(git rev-parse HEAD)"
+
+      - name: Run upstream host regressions
+        working-directory: vector
+        run: |
+          bash tests/run-native-regressions.sh
+          bash tests/run-daemon-regressions.sh
 
       - name: Apply Samsung android.uid.system guard
         working-directory: vector
@@ -41,18 +63,11 @@ jobs:
           git diff --check
           git diff -- legacy/src/main/java/org/matrix/vector/legacy/LegacyDelegateImpl.java legacy/src/main/java/de/robv/android/xposed/XposedBridge.java
 
-      - name: Synchronize GPL-3.0 license from pinned upstream
+      - name: Verify GPL-3.0 license and record source identity
         shell: bash
         run: |
           set -euo pipefail
-          cp vector/LICENSE patch-repo/LICENSE
-          git -C patch-repo config user.name 'github-actions[bot]'
-          git -C patch-repo config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -C patch-repo add LICENSE
-          if ! git -C patch-repo diff --cached --quiet; then
-            git -C patch-repo commit -m 'legal: sync GPL-3.0 license from pinned Vector-SR'
-            git -C patch-repo push origin HEAD:main
-          fi
+          cmp vector/LICENSE patch-repo/LICENSE
           echo "PUBLIC_REPO_SHA=$(git -C patch-repo rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Package corresponding source
@@ -71,20 +86,31 @@ jobs:
             --exclude='.cxx' \
             vector/ "$SOURCE_DIR/"
 
+          mkdir -p "$SOURCE_DIR/s24u-hotfix-build"
+          cp patch-repo/scripts/apply_samsung_hotfix.py "$SOURCE_DIR/s24u-hotfix-build/"
+          cp patch-repo/docs/BUILDING.md "$SOURCE_DIR/s24u-hotfix-build/BUILDING.md"
+          git -C vector submodule status --recursive > out/SUBMODULES.txt
+          cp out/SUBMODULES.txt "$SOURCE_DIR/s24u-hotfix-build/"
+
           (
             cd "$SOURCE_DIR"
-            zip -qr "$GITHUB_WORKSPACE/out/Vector-SR-v1.2-3136-S24U-Hotfix-source.zip" .
+            zip -qr "$GITHUB_WORKSPACE/out/Vector-SR-v1.2-3151-S24U-Hotfix-source.zip" .
           )
 
-          git -C vector diff --binary > out/Vector-SR-v1.2-3136-S24U-Hotfix.patch
+          git -C vector diff --binary > out/Vector-SR-v1.2-3151-S24U-Hotfix.patch
           cat > out/SOURCE-METADATA.txt <<EOF
           Project: unofficial Vector-SR Samsung S24 Ultra Shared-UID hotfix
-          Modified: 2026-08-22
+          Hotfix originally modified: 2026-08-22
+          Upstream rebase: 2026-10-24
           Vector-SR upstream: byemaxx/Vector-SR
-          Upstream commit: a8f500ddb1c8f53efec6fd02b6520c321db34627
+          Upstream commit: ccf240320c838ee097b7bd4d996f314d25643cb0
+          Module version: v1.2 (3151)
+          Validation: candidate; not device-tested
           Compatibility repository commit: ${PUBLIC_REPO_SHA}
           License: GNU General Public License v3.0 (GPL-3.0)
           The source ZIP contains the patched upstream working tree and checked-out submodule contents used for this build.
+          Build instructions and the exact patch script are included in s24u-hotfix-build/ inside the source ZIP.
+          SUBMODULES.txt records the checked-out submodule revisions.
           EOF
 
       - name: Setup Java
@@ -108,7 +134,7 @@ jobs:
           version: 1.12.1
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Remove Android SDK bundled CMake
         run: rm -rf "$ANDROID_HOME/cmake"
@@ -121,8 +147,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          src=$(ls vector/zygisk/release/Vector-SR-v*-Release.zip | head -1)
-          cp "$src" out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip
+          src='vector/zygisk/release/Vector-SR-v1.2-3151-Release.zip'
+          cp "$src" out/Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip
           (
             cd out
             rm -f SHA256SUMS.txt
@@ -131,26 +157,32 @@ jobs:
               sha256sum "$file"
             done | sort > SHA256SUMS.txt
           )
-          unzip -p out/Vector-SR-S24U-Device-Tested-SharedUID-Hotfix-Release.zip module.prop 2>/dev/null || true
+          unzip -p out/Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip module.prop
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v6
         with:
-          name: Vector-SR-S24U-Device-Tested-SharedUID-Hotfix
+          name: Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate
           path: out/*
           if-no-files-found: error
 
-      - name: Publish GitHub Release assets
+      - name: Publish separate candidate prerelease
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_prerelease }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG='v1.2-3136-s24u-hotfix'
-          TITLE='Vector-SR v1.2 (3136) — S24 Ultra SharedUID Hotfix'
+          TAG='v1.2-3151-s24u-hotfix'
+          TITLE='Vector-SR v1.2 (3151) — S24 Ultra SharedUID Hotfix candidate'
           NOTES=$(cat <<'EOF'
-          Unofficial device-specific Vector-SR build for the Samsung Galaxy S24 Ultra baseline documented in this repository.
+          Unofficial candidate rebased to byemaxx/Vector-SR commit ccf240320c838ee097b7bd4d996f314d25643cb0 (v1.2 / 3151).
+
+          This rebase has not been validated on a device. Host regressions and a successful build do not establish soft-restart, thermal, or One UI compatibility on hardware.
+
+          The historical One UI 8.5 release remains available separately at:
+          https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3136-s24u-hotfix
 
           This release is not affiliated with or endorsed by byemaxx/Vector-SR, JingMatrix/Vector, Samsung, or their upstream developers.
 
@@ -164,23 +196,24 @@ jobs:
           - the exact source diff and SOURCE-METADATA.txt are attached;
           - SHA256SUMS.txt covers all release assets.
 
-          Device validation details and the original device-tested artifact fingerprint remain documented in the repository. Please report modification-specific issues here rather than upstream unless reproduced on an unmodified build.
+          Historical device validation applies to the 3136 baseline. Please report modification-specific issues here rather than upstream unless reproduced on an unmodified build.
           EOF
           )
 
-          # Point the public release tag at the repository commit that includes the synchronized license.
+          # Refuse to move an existing tag or replace an existing release's assets.
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
-              -f sha="$PUBLIC_REPO_SHA" -F force=true >/dev/null
+            echo "Tag $TAG already exists; refusing to replace it." >&2
+            exit 1
           fi
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" out/* --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --target "$PUBLIC_REPO_SHA" --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$TAG" out/* \
-              --title "$TITLE" \
-              --notes "$NOTES" \
-              --target "$PUBLIC_REPO_SHA" \
-              --repo "$GITHUB_REPOSITORY"
+            echo "Release $TAG already exists; refusing to replace it." >&2
+            exit 1
           fi
+          gh release create "$TAG" out/* \
+            --title "$TITLE" \
+            --notes "$NOTES" \
+            --target "$PUBLIC_REPO_SHA" \
+            --prerelease \
+            --latest=false \
+            --repo "$GITHUB_REPOSITORY"
