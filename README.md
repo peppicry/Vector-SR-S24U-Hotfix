@@ -1,44 +1,44 @@
 # Vector-SR S24 Ultra Samsung Shared-UID Hotfix
 
-Este projeto reúne uma correção para um problema observado no Vector-SR em aparelhos Samsung: depois de um reinício suave, erros repetidos podiam sobrecarregar o sistema e causar aquecimento.
+This project provides a fix for a problem observed with Vector-SR on Samsung devices: after a soft restart, repeated errors could overload the system and cause the phone to heat up.
 
-A correção original foi testada no Galaxy S24 Ultra com One UI 8.5. A **3151 já está disponível como pré-release** e teve a abertura do gerenciador confirmada em um S25 Ultra, após o procedimento de atualização descrito abaixo.
+The original fix was tested on a Galaxy S24 Ultra running One UI 8.5. **3151 is now available as a prerelease**, and its manager opened successfully on a Galaxy S25 Ultra after the upgrade recovery described below.
 
 > [!NOTE]
-> Este é um projeto modificado e não oficial. Não tem vínculo nem aprovação dos desenvolvedores do Vector-SR, Vector ou da Samsung. Os créditos do projeto original continuam com JingMatrix, byemaxx e os demais colaboradores. Para problemas desta modificação, use as Issues deste repositório.
+> This is an unofficial modified project. It is not affiliated with or endorsed by the Vector-SR developers, Vector developers, or Samsung. Credit for the original project remains with JingMatrix, byemaxx, and the other contributors. Please report issues with this modification in this repository.
 
-## Qual versão baixar?
+## Which version should I download?
 
-| Versão | Situação | Download |
+| Version | Status | Download |
 | --- | --- | --- |
-| **3151 — pré-release** | Versão em teste. Gerenciador e carregamento do One UI X verificados no S25 Ultra com Android 17 / One UI 9, após recuperação manual da atualização. | [Baixar o módulo 3151 (.zip)](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/download/v1.2-3151-s24u-hotfix/Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip) · [Ver os detalhes](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3151-s24u-hotfix) |
-| **3136 — One UI 8.5** | Versão anterior mantida para quem continua na One UI 8.5. O registro do teste original no S24 Ultra está nos detalhes técnicos abaixo. | [Abrir a versão 3136](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3136-s24u-hotfix) |
-| **One UI X 1.7.0** | Versão complementar do conjunto original testado com One UI 8.5. | [Abrir o One UI X](https://github.com/peppicry/OneUIX-VectorSR-S24U/releases/tag/v1.7.0-vectorsr-s24u) |
+| **3151 — prerelease** | Test build. Manager opening and One UI X loading were verified on a Galaxy S25 Ultra running Android 17 / One UI 9, after manual upgrade recovery. | [Download the 3151 module (.zip)](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/download/v1.2-3151-s24u-hotfix/Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip) · [Release details](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3151-s24u-hotfix) |
+| **3136 — One UI 8.5** | Previous release retained for users staying on One UI 8.5. The original S24 Ultra test record is in the technical details below. | [Open the 3136 release](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3136-s24u-hotfix) |
+| **One UI X 1.7.0** | Companion release from the original setup tested on One UI 8.5. | [Open One UI X](https://github.com/peppicry/OneUIX-VectorSR-S24U/releases/tag/v1.7.0-vectorsr-s24u) |
 
-Para instalar a 3151 pelo gerenciador de módulos, escolha **`Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip`**. Os arquivos com `source` no nome e os links automáticos “Source code” são o código-fonte, não o módulo para instalar.
+To install 3151 through your module manager, choose **`Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip`**. Files with `source` in their names and GitHub's automatic “Source code” links contain source code, not the installable module.
 
-O GitHub continua mostrando a 3136 como “Mais recente” porque a 3151 é uma pré-release. Isso não significa que a 3151 deixou de estar disponível.
+GitHub still labels 3136 as “Latest” because 3151 is a prerelease. The 3151 download is available through the link above.
 
-## Aviso para quem vai atualizar da 3136 para a 3151
+## Upgrading from 3136 to 3151
 
-Se você instalar a 3151 e, ao abrir o Vector, aparecer uma tela do Android sobre relatórios de bugs, pode ser que o serviço da versão antiga ainda esteja rodando. Isso aconteceu no nosso teste com um Galaxy S25 Ultra, usando Android 17 / One UI 9, mesmo depois de um reinício suave pelo KernelSU.
+If you install 3151 and opening Vector brings up Android's bug report warning instead of the manager, the old background service may still be running. We encountered this on a Galaxy S25 Ultra with Android 17 / One UI 9, even after a KernelSU soft restart.
 
-Nesse aparelho, a interface já era da 3151, mas o serviço que funciona em segundo plano ainda era da 3136. Essa diferença impediu o gerenciador de abrir.
+On that device, the new 3151 manager was already in place, but the background service was still running 3136. The version mismatch prevented the manager from opening.
 
-Para resolver, encerramos o serviço antigo e os processos do gerenciador, iniciamos o serviço da 3151 e depois fizemos outro reinício suave pelo Root My Galaxy. As configurações foram preservadas. Depois disso, o gerenciador abriu normalmente e o One UI X voltou a carregar.
+To recover, we stopped the old service and the manager processes, started the 3151 service, and then performed another soft restart through Root My Galaxy. Settings were preserved. The manager then opened normally, and One UI X loaded again.
 
-**Essa recuperação foi feita manualmente. O ZIP atual ainda não faz essa troca automaticamente**, então apenas reinstalar o módulo e repetir o reinício suave pode não resolver.
+**This recovery was performed manually. The current ZIP does not handle this handover automatically**, so reinstalling the module and repeating a soft restart may not be enough.
 
-Ver `com.android.shell` na tela do gerenciador é normal: o Vector usa esse pacote para abrir sua interface.
+Seeing `com.android.shell` in the manager is normal: Vector uses that package to host its interface.
 
-A abertura foi confirmada nesse S25 Ultra. As demais funções dos módulos e outros aparelhos ainda precisam de testes.
+Manager opening was confirmed on this S25 Ultra. Other module features and devices still need testing.
 
-Para quem continua na **One UI 8.5**, a [versão 3136 permanece disponível](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3136-s24u-hotfix).
+If you are staying on **One UI 8.5**, the [3136 release remains available](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3136-s24u-hotfix).
 
-## Detalhes técnicos e histórico
+## Technical details and history
 
 <details>
-<summary>Ver a correção, os testes, a compilação e os hashes dos arquivos</summary>
+<summary>View the fix, tests, build process, and file hashes</summary>
 
 ## Modified-version notice
 
@@ -158,10 +158,10 @@ Please report bugs introduced by this modified build to this repository. Do not 
 
 </details>
 
-## Licença
+## License
 
-O Vector-SR e esta modificação seguem a licença **GPL-3.0**. Os créditos dos autores originais foram mantidos, e o código-fonte usado em cada compilação está anexado à respectiva versão.
+Vector-SR and this modification use **GPL-3.0**. Credit to the original authors is preserved, and the source code used for each build is attached to its release.
 
-Consulte [LICENSE](LICENSE), [UPSTREAM.md](UPSTREAM.md) e os arquivos de código-fonte nas versões publicadas.
+See [LICENSE](LICENSE), [UPSTREAM.md](UPSTREAM.md), and the source archives attached to the published releases.
 
-O software é fornecido sem garantia. Confira os testes e as limitações descritos nesta página antes de escolher a versão.
+The software is provided without warranty. Check the documented tests and limitations before choosing a version.
