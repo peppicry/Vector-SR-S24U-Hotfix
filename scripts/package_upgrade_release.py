@@ -21,9 +21,6 @@ PINS = {
     BASE_PATCH: '3e79a4cb14d4288765386bdc78a8f342f06dd0bed7a592ab85e68dba80e676d1',
     'SUBMODULES.txt': 'd4b045b3f7c8410edb2bf07996fb633ace2292590a233b2a08e7865c7b00a399',
 }
-MODULE = 'Vector-SR-v1.2-3151-r2-S24U-SharedUID-Hotfix-Release.zip'
-SOURCE = 'Vector-SR-v1.2-3151-r2-S24U-Hotfix-source.zip'
-PATCH = 'Vector-SR-v1.2-3151-r2-S24U-Hotfix.patch'
 sha = lambda data: hashlib.sha256(data).hexdigest()
 
 
@@ -81,7 +78,7 @@ def main():
             raise ValueError('Unverified base artifact: ' + name)
     reports = [json.loads(p.read_text()) for p in args.test_report]
     for report in reports:
-        if not report['passed'] or report['skipped'] or report['tests'] < 13:
+        if not report['passed'] or report['skipped'] or report['tests'] < 22:
             raise ValueError('Incomplete or failed integration tests')
 
     old_module = entries(args.base_dir / BASE_MODULE)
@@ -90,6 +87,11 @@ def main():
     spec = importlib.util.spec_from_file_location('upgrade_patch', REPO / 'scripts/apply_upgrade_fix.py')
     patcher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(patcher)
+    revision = patcher.PACKAGING_REVISION
+    MODULE = f'Vector-SR-v1.2-3151-{revision}-S24U-SharedUID-Hotfix-Release.zip'
+    SOURCE = f'Vector-SR-v1.2-3151-{revision}-S24U-Hotfix-source.zip'
+    PATCH = f'Vector-SR-v1.2-3151-{revision}-S24U-Hotfix.patch'
+    release_notes = f'RELEASE_3151_{revision.upper()}.md'
     with tempfile.TemporaryDirectory(prefix='vector-source-preflight-') as temp:
         source_root = Path(temp)
         for name in patcher.PINNED:
@@ -152,7 +154,7 @@ def main():
         's24u-hotfix-build/scripts/package_upgrade_release.py': Path(__file__).read_bytes(),
         's24u-hotfix-build/BUILDING.md': (REPO / 'docs/BUILDING.md').read_bytes(),
         's24u-hotfix-build/docs/BUILDING.md': (REPO / 'docs/BUILDING.md').read_bytes(),
-        's24u-hotfix-build/docs/RELEASE_3151_R2.md': (REPO / 'docs/RELEASE_3151_R2.md').read_bytes(),
+        's24u-hotfix-build/docs/' + release_notes: (REPO / 'docs' / release_notes).read_bytes(),
         's24u-hotfix-build/tests/test_upgrade_runtime.py': (REPO / 'tests/test_upgrade_runtime.py').read_bytes(),
     })
     for name in ['service.sh', 'upgrade-runtime.sh']:
@@ -168,7 +170,7 @@ def main():
     metadata = f'''Project: unofficial Vector-SR Samsung S24 Ultra Shared-UID hotfix
 Upstream commit: ccf240320c838ee097b7bd4d996f314d25643cb0
 Module framework version: v1.2 (3151)
-Packaging revision: 3151-r2, automatic upgrade handover
+Packaging revision: 3151-{revision}, automatic upgrade handover and startup diagnostics
 Compatibility repository commit: {args.repository_commit}
 Original binary build commit: 457572da71ff6c03e6b2b1dcc6a072b56aae15a3
 Original module SHA-256: {PINS[BASE_MODULE]}
@@ -180,7 +182,7 @@ The source ZIP includes the complete patched upstream tree and checked-out submo
 License: GNU General Public License v3.0 (GPL-3.0)
 '''
     (args.output / 'SOURCE-METADATA.txt').write_bytes(metadata.encode())
-    evidence = {'validation': validation, 'host_reports': reports,
+    evidence = {'packaging_revision': revision, 'validation': validation, 'host_reports': reports,
                 'unchanged_binary_files': unchanged,
                 'preserved_apk_sha256': {name: sha(new_files[name]) for name in ['manager.apk', 'daemon.apk']},
                 'changed_module_files': sorted(n for n in module_changes if not n.endswith('.sha256')),

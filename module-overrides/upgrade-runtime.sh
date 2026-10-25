@@ -104,3 +104,49 @@ vector_has_current_runtime() {
     done
     return 1
 }
+
+# Called only after checking for an already recognized current daemon.
+# Return 2 for an inconclusive start decision; never broaden stop criteria.
+vector_start_preflight() {
+    local vr_pid vr_dir="$1"
+    if [ -r /data/local/tmp/daemon.apk ]; then
+        vector_upgrade_log 'Start decision inconclusive: debug APK override present; no launch or stop requested.'
+        return 2
+    fi
+    for vr_pid in $(pidof lspd 2>/dev/null); do
+        if ! vector_owned_daemon "$vr_pid" "$vr_dir"; then
+            vector_upgrade_log "Start decision inconclusive: lspd PID $vr_pid is not attributable; runtime left untouched."
+            return 2
+        fi
+    done
+    return 0
+}
+
+# Positive attribution only: no matching FD does not establish daemon failure.
+# Do not assume the background launcher's PID is the eventual daemon's PID.
+vector_observe_start() {
+    local vr_dir="$1" vr_candidate vr_pid vr_token vr_ticks=0
+    while [ "$vr_ticks" -lt 30 ]; do
+        vr_pid=''
+        for vr_candidate in $(pidof lspd 2>/dev/null); do
+            vector_current_daemon "$vr_candidate" "$vr_dir" || continue
+            vr_token=$(vector_process_token "$vr_candidate") || continue
+            vr_pid="$vr_candidate"
+            break
+        done
+        if [ -n "$vr_pid" ]; then
+            sleep 1
+            vr_ticks=$((vr_ticks + 2))
+            if [ "$(vector_process_token "$vr_pid")" = "$vr_token" ] &&
+                vector_current_daemon "$vr_pid" "$vr_dir"; then
+                vector_upgrade_log "Current daemon $vr_pid observed in two samples; origin and Android IPC readiness are not established."
+                return 0
+            fi
+        else
+            sleep 0.5
+            vr_ticks=$((vr_ticks + 1))
+        fi
+    done
+    vector_upgrade_log 'Startup observation inconclusive; this does not establish daemon failure. No retry, stop or Android restart requested by this check.'
+    return 2
+}

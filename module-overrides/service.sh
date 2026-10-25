@@ -6,7 +6,18 @@ MODDIR=$(pwd -P) || exit 1
 . "$MODDIR/upgrade-runtime.sh" || exit 1
 
 # KernelSU soft restart can leave the old daemon alive. Replace stale instances,
-# but preserve a healthy current daemon and its existing reinjection state.
+# but preserve a current daemon process and its existing reinjection state.
+if vector_has_current_runtime "$MODDIR"; then
+    vector_upgrade_log 'A current daemon process is already running; leaving all processes untouched.'
+    exit 0
+fi
+if vector_start_preflight "$MODDIR"; then
+    :
+else
+    vr_status=$?
+    [ "$vr_status" -eq 2 ] && exit 0
+    exit 1
+fi
 vector_stop_runtime "$MODDIR" stale || exit 1
 if vector_has_current_runtime "$MODDIR"; then
     vector_upgrade_log 'The installed daemon is already running; keeping it for reinjection.'
@@ -29,4 +40,12 @@ else
         *--propagation*) unshare --propagation slave -m "$MODDIR/daemon" --system-server-max-retry=3 "$@" </dev/null & ;;
         *) vector_upgrade_log 'No compatible unshare found; daemon was not started.'; exit 1 ;;
     esac
+fi
+
+if vector_observe_start "$MODDIR"; then
+    exit 0
+else
+    vr_status=$?
+    [ "$vr_status" -eq 2 ] && exit 0
+    exit 1
 fi

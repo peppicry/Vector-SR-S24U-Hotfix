@@ -93,7 +93,7 @@ jobs:
           mkdir -p "$SOURCE_DIR/s24u-hotfix-build/scripts" "$SOURCE_DIR/s24u-hotfix-build/docs" "$SOURCE_DIR/s24u-hotfix-build/tests"
           cp patch-repo/scripts/apply_upgrade_fix.py patch-repo/scripts/package_upgrade_release.py "$SOURCE_DIR/s24u-hotfix-build/scripts/"
           cp -r patch-repo/module-overrides "$SOURCE_DIR/s24u-hotfix-build/"
-          cp patch-repo/docs/BUILDING.md patch-repo/docs/RELEASE_3151_R2.md "$SOURCE_DIR/s24u-hotfix-build/docs/"
+          cp patch-repo/docs/BUILDING.md patch-repo/docs/RELEASE_3151_*.md "$SOURCE_DIR/s24u-hotfix-build/docs/"
           cp patch-repo/tests/test_upgrade_runtime.py "$SOURCE_DIR/s24u-hotfix-build/tests/"
           git -C vector submodule status --recursive > out/SUBMODULES.txt
           cp out/SUBMODULES.txt "$SOURCE_DIR/s24u-hotfix-build/"

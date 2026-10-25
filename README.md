@@ -26,9 +26,11 @@ GitHub now labels 3151-r2 as “Latest”. The 3136 release remains available se
 
 The installer verifies the payloads first, then stops the previous Vector background service and manager processes automatically. The next soft restart loads the installed 3151 service from the correct module directory. Settings and module scopes are preserved.
 
-The startup script also replaces stale Vector instances while keeping a healthy current daemon for later soft restarts. You no longer need manual commands to perform the old-service handover. The installer does not restart the phone by itself.
+The startup script also replaces stale Vector instances while keeping a current daemon process for later soft restarts. You no longer need manual commands to perform the old-service handover. The installer does not restart the phone by itself.
 
 The framework still reports **1.2 (3151)**; **r2** identifies the corrected packaging and installation scripts. Seeing `com.android.shell` in the manager is normal: Vector uses that package to host its interface.
+
+Changes on `main` do not replace published release assets. New packaging revisions use separate tags; automatic CI runs build and test artifacts, while publication requires an explicit manual request.
 
 ## Validation
 

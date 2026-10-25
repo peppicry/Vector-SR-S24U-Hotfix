@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Apply the shell-only 3151-r2 update to the pinned, already-patched source tree."""
+"""Apply the current shell-only packaging revision to the pinned source tree."""
 from pathlib import Path
 import hashlib
+import re
 
 REPO = Path(__file__).resolve().parents[1]
+PACKAGING_REVISION = 'r3'
+if not re.fullmatch(r'r(?:[2-9]|[1-9][0-9]+)', PACKAGING_REVISION):
+    raise ValueError('Invalid packaging revision')
 PINNED = {
     'zygisk/module/customize.sh': '92bf148c7ab3751b83c55701715458091f9c6284f8fd800fe0411324f798ec1c',
     'zygisk/module/service.sh': '87695dc0b87bcec55b547ca0cbe37530c9f48d1b59f833a9c3bc34f21578fb9c',
@@ -42,7 +46,7 @@ ui_print "- Upgrade handover prepared. Perform the usual soft restart to activat
     prop = originals['zygisk/module/module.prop']
     if prop.count('version=${versionName} (${versionCode})') != 1:
         raise ValueError('Version anchor changed; no files changed')
-    updates['zygisk/module/module.prop'] = prop.replace('version=${versionName} (${versionCode})', 'version=${versionName} (${versionCode}) - upgrade fix r2', 1).encode()
+    updates['zygisk/module/module.prop'] = prop.replace('version=${versionName} (${versionCode})', f'version=${{versionName}} (${{versionCode}}) - upgrade fix {PACKAGING_REVISION}', 1).encode()
     for name in ['service.sh', 'upgrade-runtime.sh']:
         updates['zygisk/module/' + name] = (REPO / 'module-overrides' / name).read_bytes()
     return updates
@@ -53,7 +57,7 @@ def main():
     updates = changes(root)
     for name, data in updates.items():
         (root / name).write_bytes(data)
-    print('Applied 3151-r2 automatic Vector runtime handover (shell-only)')
+    print(f'Applied 3151-{PACKAGING_REVISION} Vector runtime handover (shell-only)')
 
 
 if __name__ == '__main__':

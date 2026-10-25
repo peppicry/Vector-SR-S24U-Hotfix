@@ -1,10 +1,10 @@
-# Building 3151 and the r2 upgrade fix
+# Building 3151 packaging revisions
 
 The framework remains Vector-SR `v1.2 (3151)` at upstream commit `ccf240320c838ee097b7bd4d996f314d25643cb0`. Revision r2 changes the installer and startup scripts, adds a runtime handover helper and displays the packaging revision in `module.prop`.
 
 The published r2 ZIP reuses the verified 3151 manager APK, daemon APK, framework DEX and native binaries byte for byte. It preserves their matching signing identity. It does not disable manager signature verification or change the Samsung Shared-UID Java guard.
 
-## Reproduce the corrected package
+## Reproduce the published r2 package
 
 The **Package and release 3151 automatic upgrade fix** workflow downloads four exact assets from the original 3151 release. `scripts/package_upgrade_release.py` verifies their pinned SHA-256 digests before using them:
 
@@ -13,7 +13,7 @@ The **Package and release 3151 automatic upgrade fix** workflow downloads four e
 - `Vector-SR-v1.2-3151-S24U-Hotfix.patch`
 - `SUBMODULES.txt`
 
-Place those files in `base/` and check out the compatibility repository commit recorded in the r2 `SOURCE-METADATA.txt`. Run:
+Place those files in `base/` and check out the compatibility repository commit recorded in the r2 `SOURCE-METADATA.txt` (`66058f01336099126943e935a352dc50c9c9f9f3`). Reproducing r2 requires that historical source, not the current `main` branch. Run:
 
 ```sh
 python3 scripts/package_upgrade_release.py --base-dir base --output out --repository-commit "$(git rev-parse HEAD)"
@@ -26,6 +26,14 @@ python3 scripts/package_upgrade_release.py --base-dir base --output out --reposi
 These Linux tests use disposable processes with real `/proc` entries and open APK file descriptors. They run the complete installer against the corrected ZIP, including a corrupt-payload case that must leave the old service running. They never install anything on an Android device.
 
 The packager verifies all internal module checksums, checks that unrelated binary/source contents remain unchanged, and verifies that the complete source patch applies. It includes the test reports and preserved APK hashes in `UPGRADE-TESTS.json`.
+
+## Prepare a new packaging revision
+
+The current scripts take the packaging revision from `PACKAGING_REVISION` in `scripts/apply_upgrade_fix.py`. The packager derives the module/source/patch names, displayed module revision, source metadata and release-note filename from that value. A changed package must use a fresh revision; never republish r2.
+
+Use the same pinned inputs above. Run the packager, run both host test commands against its new module filename, then rerun the packager with both passing reports. This produces corresponding sources and checksums for the new revision without rebuilding signed payloads.
+
+Push-triggered workflow runs only build, test and upload artifacts. Manual runs also default to no publication. Explicit `publish_prerelease=true` on `main` can upload a new draft with its own tag and publish it only after every asset is attached; an existing tag or API lookup failure aborts publication. Earlier releases are never edited by this workflow. New prereleases do not replace the current Latest release.
 
 ## Recompile the complete framework from source
 
@@ -58,4 +66,4 @@ A fresh full compilation may use a different signing key and will not reproduce 
 
 ## Validation limits
 
-The original 3151 manager and One UI X loading were observed on a Galaxy S25 Ultra after manual recovery. The r2 automatic installer path is covered by Linux host integration tests; on-device automatic-upgrade validation is separate. Successful source/build/host checks do not prove every module feature, thermal behavior or compatibility with other firmware.
+The original 3151 manager and One UI X loading were observed on a Galaxy S25 Ultra after manual recovery. The r2 automatic installer path is covered by Linux host integration tests; on-device automatic-upgrade validation is separate. Successful source/build/host checks do not prove every module feature, thermal behavior or compatibility with other firmware. A recognized current daemon is preserved before checking blockers for a new start. If no current daemon is recognized, an unidentified lspd or readable debug APK override leaves the runtime untouched with an inconclusive diagnostic and neutral service status. After one launch, a bounded observation can positively attribute a current process in two samples using its PID, start-time token, working directory and APK descriptor. It does not assume that the background launcher's PID is the daemon's PID, attribute process origin or prove Binder availability. Missing descriptors, a disappearing launcher or timeout remain inconclusive; the service returns neutral status and does not retry, stop processes or request an Android restart. Neutral status is not evidence that the framework is active. The existing daemon recovery policy is unchanged.

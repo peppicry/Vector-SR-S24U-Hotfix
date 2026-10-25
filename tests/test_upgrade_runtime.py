@@ -5,6 +5,7 @@ import argparse
 import ctypes
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -19,13 +20,19 @@ SHELL = ['/bin/sh']
 MODULE_ZIP = None
 CHILD = r'''
 import ctypes, os, signal, sys, time
-name, apk, cwd, ignore = sys.argv[1:]
+name, apk, cwd, ignore, *options = sys.argv[1:]
+lifetime = options[0] if options else ''
+fd_mode = options[1] if len(options) > 1 else 'keep'
 ctypes.CDLL(None).prctl(15, name.encode(), 0, 0, 0)
 os.chdir(cwd)
 held = open(apk, 'rb')
+if fd_mode == 'close': held.close()
 if ignore == 'yes': signal.signal(signal.SIGTERM, signal.SIG_IGN)
 print('ready', flush=True)
-while True: time.sleep(1)
+if lifetime:
+    time.sleep(float(lifetime))
+else:
+    while True: time.sleep(1)
 '''
 
 
@@ -51,10 +58,10 @@ class UpgradeTests(unittest.TestCase):
             child.stdout.close()
         self.temp.cleanup()
 
-    def spawn(self, name, apk=None, cwd=None, ignore=False):
+    def spawn(self, name, apk=None, cwd=None, ignore=False, hold_apk=True):
         child = subprocess.Popen(
             [name, '-u', '-c', CHILD, name, str(apk or self.active / 'daemon.apk'),
-             str(cwd or self.active), 'yes' if ignore else 'no'],
+             str(cwd or self.active), 'yes' if ignore else 'no', '', 'keep' if hold_apk else 'close'],
             executable=sys.executable, stdout=subprocess.PIPE, text=True,
             start_new_session=True,
         )
@@ -79,22 +86,32 @@ class UpgradeTests(unittest.TestCase):
             self.assertEqual(child.wait(timeout=5), -15, 'Only SIGTERM is allowed in the runtime helper')
         self.assertEqual(self.config.read_bytes(), b'preserved-user-scopes-and-settings')
 
-    def service(self, compatible=True):
+    def service(self, compatible=True, start_daemon=True, fork_daemon=False, hold_apk=True):
         fakebin = self.root / 'test-bin'
         fakebin.mkdir(exist_ok=True)
         output = self.root / 'launch.json'
         unshare = fakebin / 'unshare'
+        fd_mode = 'keep' if hold_apk else 'close'
+        startup = (
+            f' if {fork_daemon!r} and os.fork():\n'
+            '  sys.exit(0)\n'
+            f' os.execv(sys.executable, ["lspd", "-u", "-c", {CHILD!r}, "lspd", '
+            f'{str(self.active / "daemon.apk")!r}, {str(self.active)!r}, "no", "3", {fd_mode!r}])\n'
+        ) if start_daemon else ' pass\n'
         unshare.write_text('#!/usr/bin/env python3\nimport json,os,sys\n'
                            'if sys.argv[1:] == ["--help"]:\n'
                            f' print({"--propagation" if compatible else "toybox unshare -m"!r})\n'
                            'else:\n'
-                           ' with open(os.environ["VECTOR_TEST_LAUNCH"],"w") as f:\n'
-                           '  json.dump({"cwd":os.getcwd(),"args":sys.argv[1:]},f)\n')
+                           ' path = os.environ["VECTOR_TEST_LAUNCH"]\n'
+                           ' previous = json.load(open(path)) if os.path.exists(path) else {"launches":0}\n'
+                           ' with open(path,"w") as f:\n'
+                           '  json.dump({"cwd":os.getcwd(),"args":sys.argv[1:],"launcher_pid":os.getpid(),"launches":previous["launches"]+1},f)\n'
+                           + startup)
         unshare.chmod(0o755)
         environment = dict(os.environ, PATH=str(fakebin) + ':' + os.environ['PATH'],
                            VECTOR_TEST_LAUNCH=str(output))
         result = subprocess.run(SHELL + [str(self.active / 'service.sh')], env=environment,
-                                capture_output=True, text=True, timeout=10)
+                                capture_output=True, text=True, timeout=20)
         return result, output
 
     def test_new_install_leaves_unrelated_manager_alone(self):
@@ -176,6 +193,94 @@ class UpgradeTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('No compatible unshare', result.stdout)
         self.assertFalse(output.exists())
+
+    def observe_start(self):
+        return subprocess.run(
+            SHELL + ['-c', '. "$1"; vector_observe_start "$2"',
+                     'startup-test', str(self.active / 'upgrade-runtime.sh'), str(self.active)],
+            capture_output=True, text=True, timeout=20)
+
+    def test_start_observation_does_not_stop_existing_processes(self):
+        daemon = self.spawn('lspd')
+        manager = self.spawn('org.lsposed.manager')
+        result = self.observe_start()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('origin and Android IPC readiness are not established', result.stdout)
+        self.assert_alive(daemon, manager)
+
+    def test_start_observation_is_inconclusive_after_a_process_exits(self):
+        daemon = self.spawn('lspd')
+        daemon.terminate()
+        daemon.wait(timeout=5)
+        self.assertEqual(self.observe_start().returncode, 2)
+
+    def test_service_leaves_an_unidentified_lspd_unchanged_with_neutral_status(self):
+        other = self.root / 'another-module'
+        other.mkdir()
+        apk = other / 'daemon.apk'
+        apk.write_bytes(b'unrelated daemon')
+        daemon = self.spawn('lspd', apk=apk, cwd=other)
+        manager = self.spawn('org.lsposed.manager')
+        result, output = self.service()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Start decision inconclusive', result.stdout)
+        self.assertFalse(output.exists())
+        self.assert_alive(daemon, manager)
+
+    def test_service_reports_an_early_exit_as_inconclusive_without_launching_again(self):
+        result, output = self.service(start_daemon=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(output.read_text())['launches'], 1)
+        self.assertIn('Startup observation inconclusive', result.stdout)
+
+    def test_current_runtime_is_kept_before_start_preflight(self):
+        daemon = self.spawn('lspd')
+        manager = self.spawn('org.lsposed.manager')
+        with (self.active / 'upgrade-runtime.sh').open('a') as helper:
+            helper.write('\nvector_start_preflight() { echo "blocked preflight"; return 2; }\n')
+        result, output = self.service()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('already running', result.stdout)
+        self.assertNotIn('blocked preflight', result.stdout)
+        self.assertFalse(output.exists())
+        self.assert_alive(daemon, manager)
+
+    def test_current_runtime_is_kept_with_an_unrelated_lspd(self):
+        daemon = self.spawn('lspd')
+        other = self.root / 'another-module'
+        other.mkdir()
+        apk = other / 'daemon.apk'
+        apk.write_bytes(b'unrelated daemon')
+        unrelated = self.spawn('lspd', apk=apk, cwd=other)
+        manager = self.spawn('org.lsposed.manager')
+        result, output = self.service()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(output.exists())
+        self.assert_alive(daemon, unrelated, manager)
+
+    def test_service_preserves_a_live_lspd_without_an_apk_fd(self):
+        daemon = self.spawn('lspd', hold_apk=False)
+        manager = self.spawn('org.lsposed.manager')
+        result, output = self.service()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Start decision inconclusive', result.stdout)
+        self.assertFalse(output.exists())
+        self.assert_alive(daemon, manager)
+
+    def test_service_observes_a_daemon_from_a_forking_launcher(self):
+        result, output = self.service(fork_daemon=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        launch = json.loads(output.read_text())
+        observed = re.search(r'Current daemon (\d+) observed', result.stdout)
+        self.assertIsNotNone(observed, result.stdout)
+        self.assertNotEqual(int(observed.group(1)), launch['launcher_pid'])
+        self.assertEqual(launch['launches'], 1)
+
+    def test_missing_fd_after_one_launch_remains_inconclusive(self):
+        result, output = self.service(hold_apk=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(output.read_text())['launches'], 1)
+        self.assertIn('Startup observation inconclusive', result.stdout)
 
     def install(self, corrupt=False, arch='arm64'):
         if MODULE_ZIP is None:
