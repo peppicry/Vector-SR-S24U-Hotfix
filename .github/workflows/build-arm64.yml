@@ -47,6 +47,7 @@ jobs:
         working-directory: vector
         run: |
           python3 ../patch-repo/scripts/apply_samsung_hotfix.py
+          python3 ../patch-repo/scripts/apply_upgrade_fix.py
           python3 - <<'PY'
           from pathlib import Path
           root = Path('build.gradle.kts')

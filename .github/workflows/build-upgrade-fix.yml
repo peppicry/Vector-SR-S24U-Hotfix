@@ -1,0 +1,90 @@
+name: Package and release 3151 automatic upgrade fix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-upgrade-fix.yml'
+      - 'module-overrides/**'
+      - 'scripts/apply_upgrade_fix.py'
+      - 'scripts/package_upgrade_release.py'
+      - 'tests/test_upgrade_runtime.py'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vector-3151-upgrade-fix-release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install BusyBox for ash integration tests
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq busybox
+
+      - name: Download the immutable verified binary and source inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p base
+          gh release download v1.2-3151-s24u-hotfix --repo "$GITHUB_REPOSITORY" --dir base \
+            --pattern 'Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip' \
+            --pattern 'Vector-SR-v1.2-3151-S24U-Hotfix-source.zip' \
+            --pattern 'Vector-SR-v1.2-3151-S24U-Hotfix.patch' \
+            --pattern 'SUBMODULES.txt'
+
+      - name: Build the corrected ZIP without changing signed binaries
+        run: python3 scripts/package_upgrade_release.py --base-dir base --output out --repository-commit "$GITHUB_SHA"
+
+      - name: Test the complete installer and service under dash and BusyBox ash
+        run: |
+          python3 tests/test_upgrade_runtime.py --shell /bin/sh --module-zip out/Vector-SR-v1.2-3151-r2-S24U-SharedUID-Hotfix-Release.zip --report dash-report.json
+          python3 tests/test_upgrade_runtime.py --shell 'busybox ash' --module-zip out/Vector-SR-v1.2-3151-r2-S24U-SharedUID-Hotfix-Release.zip --report ash-report.json
+
+      - name: Package the passing test reports and verify release checksums
+        run: |
+          python3 scripts/package_upgrade_release.py --base-dir base --output out --repository-commit "$GITHUB_SHA" --test-report dash-report.json --test-report ash-report.json
+          cd out
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Save reviewed release artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: Vector-SR-3151-r2-automatic-upgrade-fix
+          path: out/*
+          if-no-files-found: error
+
+      - name: Publish the corrected 3151 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG='v1.2-3151-s24u-hotfix-r2'
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "The r2 tag already exists; refusing to move it or replace its assets." >&2
+            exit 1
+          fi
+          gh release create "$TAG" out/* --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title 'Vector-SR v1.2 (3151-r2) — automatic upgrade fix' \
+            --notes-file docs/RELEASE_3151_R2.md --latest
+
+      - name: Point the original candidate to the corrected release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v1.2-3151-s24u-hotfix --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/original-candidate.md"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'original-candidate.md'
+          old = path.read_text()
+          banner = '**Superseded by [3151-r2, the corrected release with automatic upgrade handover](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3151-s24u-hotfix-r2). Download r2 for new installations or upgrades from 3136.**'
+          if banner not in old:
+              path.write_text(banner + '\n\n' + old)
+          PY
+          gh release edit v1.2-3151-s24u-hotfix --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/original-candidate.md"
