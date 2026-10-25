@@ -2,7 +2,7 @@
 
 This project provides a fix for a problem observed with Vector-SR on Samsung devices: after a soft restart, repeated errors could overload the system and cause the phone to heat up.
 
-The original fix was tested on a Galaxy S24 Ultra running One UI 8.5. **3151 is now available as a prerelease**, and its manager opened successfully on a Galaxy S25 Ultra after the upgrade recovery described below.
+The original fix was tested on a Galaxy S24 Ultra running One UI 8.5. **The corrected 3151 release, packaging revision r2, is now available.** It handles the old background service automatically when upgrading from 3136.
 
 > [!NOTE]
 > This is an unofficial modified project. It is not affiliated with or endorsed by the Vector-SR developers, Vector developers, or Samsung. Credit for the original project remains with JingMatrix, byemaxx, and the other contributors. Please report issues with this modification in this repository.
@@ -11,27 +11,32 @@ The original fix was tested on a Galaxy S24 Ultra running One UI 8.5. **3151 is 
 
 | Version | Status | Download |
 | --- | --- | --- |
-| **3151 — prerelease** | Test build. Manager opening and One UI X loading were verified on a Galaxy S25 Ultra running Android 17 / One UI 9, after manual upgrade recovery. | [Download the 3151 module (.zip)](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/download/v1.2-3151-s24u-hotfix/Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip) · [Release details](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3151-s24u-hotfix) |
+| **3151-r2 — release** | Corrected 3151 package with automatic upgrade handover. Installer/service integration tests passed on Linux; device validation limits are explained below. | [Download the 3151-r2 module (.zip)](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/download/v1.2-3151-s24u-hotfix-r2/Vector-SR-v1.2-3151-r2-S24U-SharedUID-Hotfix-Release.zip) · [Release details](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3151-s24u-hotfix-r2) |
 | **3136 — One UI 8.5** | Previous release retained for users staying on One UI 8.5. The original S24 Ultra test record is in the technical details below. | [Open the 3136 release](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3136-s24u-hotfix) |
 | **One UI X 1.7.0** | Companion release from the original setup tested on One UI 8.5. | [Open One UI X](https://github.com/peppicry/OneUIX-VectorSR-S24U/releases/tag/v1.7.0-vectorsr-s24u) |
 
-To install 3151 through your module manager, choose **`Vector-SR-v1.2-3151-S24U-SharedUID-Hotfix-Candidate-Release.zip`**. Files with `source` in their names and GitHub's automatic “Source code” links contain source code, not the installable module.
+To install the corrected 3151 release through your module manager, choose **`Vector-SR-v1.2-3151-r2-S24U-SharedUID-Hotfix-Release.zip`**. Files with `source` in their names and GitHub's automatic “Source code” links contain source code, not the installable module.
 
-GitHub still labels 3136 as “Latest” because 3151 is a prerelease. The 3151 download is available through the link above.
+GitHub now labels 3151-r2 as “Latest”. The 3136 release remains available separately for users staying on One UI 8.5.
 
 ## Upgrading from 3136 to 3151
 
-If you install 3151 and opening Vector brings up Android's bug report warning instead of the manager, the old background service may still be running. We encountered this on a Galaxy S25 Ultra with Android 17 / One UI 9, even after a KernelSU soft restart.
+1. Install **`Vector-SR-v1.2-3151-r2-S24U-SharedUID-Hotfix-Release.zip`** through your module manager.
+2. Perform the usual soft restart through KernelSU / Root My Galaxy.
 
-On that device, the new 3151 manager was already in place, but the background service was still running 3136. The version mismatch prevented the manager from opening.
+The installer verifies the payloads first, then stops the previous Vector background service and manager processes automatically. The next soft restart loads the installed 3151 service from the correct module directory. Settings and module scopes are preserved.
 
-To recover, we stopped the old service and the manager processes, started the 3151 service, and then performed another soft restart through Root My Galaxy. Settings were preserved. The manager then opened normally, and One UI X loaded again.
+The startup script also replaces stale Vector instances while keeping a healthy current daemon for later soft restarts. You no longer need manual commands to perform the old-service handover. The installer does not restart the phone by itself.
 
-**This recovery was performed manually. The current ZIP does not handle this handover automatically**, so reinstalling the module and repeating a soft restart may not be enough.
+The framework still reports **1.2 (3151)**; **r2** identifies the corrected packaging and installation scripts. Seeing `com.android.shell` in the manager is normal: Vector uses that package to host its interface.
 
-Seeing `com.android.shell` in the manager is normal: Vector uses that package to host its interface.
+## Validation
 
-Manager opening was confirmed on this S25 Ultra. Other module features and devices still need testing.
+[Packaging and integration-test run](https://github.com/peppicry/Vector-SR-S24U-Hotfix/actions/runs/40225590125).
+
+The installer and service tests cover updates, reinstalls, later soft restarts, corrupt packages, unrelated processes and a daemon that refuses to stop. They use disposable Linux processes with real APK file descriptors. `UPGRADE-TESTS.json` records the results and preserved binary hashes.
+
+The original 3151 manager and One UI X loading were observed on a Galaxy S25 Ultra with Android 17 / One UI 9 after manual recovery. **The r2 automatic installation path has not yet been tested on an Android device.** Host tests do not establish every module feature, thermal behavior or compatibility with other firmware.
 
 If you are staying on **One UI 8.5**, the [3136 release remains available](https://github.com/peppicry/Vector-SR-S24U-Hotfix/releases/tag/v1.2-3136-s24u-hotfix).
 
@@ -45,7 +50,8 @@ If you are staying on **One UI 8.5**, the [3136 release remains available](https
 - Original hotfix: **2026-08-22**; current upstream rebase: **2026-10-24**
 - Upstream project: `byemaxx/Vector-SR`
 - Pinned upstream revision: `ccf240320c838ee097b7bd4d996f314d25643cb0`
-- Resulting candidate module version: `v1.2 (3151)`
+- Framework version: `v1.2 (3151)`; current packaging revision: **3151-r2**
+- Automatic upgrade handover added: **2026-10-25**
 - Historical device-tested base: `a8f500ddb1c8f53efec6fd02b6520c321db34627`, `v1.2 (3136)`
 - Upstream authors credited by the module: JingMatrix, byemaxx
 - License: **GNU General Public License v3.0 (GPL-3.0)**
@@ -111,7 +117,11 @@ This structure is intentionally designed so recipients of the binary have direct
 
 ## Builds
 
-### Current candidate: all-ABI build
+### Current release: 3151-r2
+
+The **Package and release 3151 automatic upgrade fix** workflow repackages the verified 3151 binaries with the corrected installer/startup scripts. Manager APK, daemon APK, framework DEX and native binaries remain byte-identical to the original candidate. Its complete patch, corresponding sources, test reports and checksums are attached to the r2 release. See [build and packaging instructions](docs/BUILDING.md).
+
+### Optional full rebuild: all-ABI candidate
 
 Run **Build candidate Vector-SR S24U hotfix**. It uses the original all-ABI packaging strategy, targets 3151, and uploads a CI artifact without publishing a release by default. Enable `publish_prerelease` only to publish the separately named `v1.2-3151-s24u-hotfix` candidate. Publication refuses an existing candidate tag/release and never overwrites the 3136 baseline or marks the candidate as latest.
 
